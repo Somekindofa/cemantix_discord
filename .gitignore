@@ -1,0 +1,14 @@
+# Secrets (voir .env.example pour le template)
+.env
+
+# Modèle de vecteurs (trop lourd, à retélécharger sur chaque machine)
+*.bin
+
+# Données de production (spécifique à chaque déploiement)
+state.json
+
+# Service systemd (chemins absolus propres à chaque machine)
+cemantix.service
+
+__pycache__/
+*.pyc
