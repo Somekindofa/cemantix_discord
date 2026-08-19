@@ -261,6 +261,10 @@ async def on_message(message: discord.Message):
         await message.reply("❓ Mot inconnu du dictionnaire.")
         return
 
+
+    if target not in model:
+        await message.reply("❓ Le mot cible n'est pas dans le dictionnaire. Veuillez redémarrer la partie.")
+        return
     sim = model.similarity(guess, target)
     temp = round(float(sim) * 100, 1)
     emoji = "🔥" if temp > 60 else ("🌡️" if temp > 30 else "❄️")
