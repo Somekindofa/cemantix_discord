@@ -5,7 +5,7 @@ Bot Discord qui recrée le principe de [Cémantix](https://cemantix.certitudes.o
 ## Fonctionnement
 
 - Chaque nuit à minuit, le bot tire automatiquement un nouveau nom commun français depuis l'API du [Wiktionnaire](https://fr.wiktionary.org) (catégorie "Noms communs en français"), en excluant les mots déjà utilisés.
-- Les joueurs tapent un mot dans le salon configuré. Le bot calcule la similarité cosinus entre ce mot et le mot du jour via un modèle d'embeddings [word2vec français (frWac2Vec)](https://fauconnier.github.io/#data), et répond avec un score en % et une barre de progression.
+- Les joueurs tapent un mot dans le salon configuré. Le bot calcule la similarité cosinus entre ce mot et le mot du jour via un modèle d'embeddings [spaCy (fr_core_news_sm)](https://spacy.io/models/fr), et répond avec un score en % et une barre de progression.
 - Un top 10 des mots les plus proches proposés dans la journée s'affiche à chaque tentative.
 - Stats persistées par joueur (victoires, nombre moyen de coups).
 
@@ -35,7 +35,7 @@ pip install discord.py gensim requests python-dotenv
    cd cemantix-bot
    ```
 
-2. Télécharge le modèle de vecteurs français depuis [fauconnier.github.io/#data](https://fauconnier.github.io/#data) : prends `frWac_no_postag_no_phrase_200_cbow_cut100.bin` (120 Mo, cbow, 200 dimensions, cutoff 100), place-le à la racine du repo. **Ce fichier n'est pas versionné dans git** (trop lourd), il faut le retélécharger sur chaque nouvelle machine.
+2. Télécharge le modèle spaCy pour le français (`fr_core_news_sm`) via la commande ci-dessus. **Ce modèle n'est pas versionné dans git** (trop lourd), il faut le télécharger sur chaque nouvelle machine.
 
 3. Copie `.env.example` vers `.env` et remplis les valeurs (ce fichier n'est jamais commité, voir `.gitignore`) :
    - `DISCORD_TOKEN` : le token de ton bot (Developer Portal → Bot → Reset Token)

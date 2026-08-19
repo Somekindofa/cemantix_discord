@@ -10,16 +10,16 @@ Un bot Discord mono-fichier (`cemantix_bot.py`) qui recrée Cémantix (Semantle 
 
 Ce bot tourne en production sur un **Raspberry Pi 3B (1 Go de RAM)**. C'est la contrainte la plus importante du projet :
 
-- Ne jamais proposer un modèle d'embeddings plus lourd que 200 dimensions / ~150 Mo. Le choix actuel (`frWac_no_postag_no_phrase_200_cbow_cut100.bin`, 120 Mo) est déjà proche de la limite raisonnable.
+- Ne jamais proposer un modèle d'embeddings plus lourd que 200 dimensions / ~150 Mo. Le choix actuel (``fr_core_news_sm` (spaCy), ~50 Mo) est déjà proche de la limite raisonnable.
 - Éviter d'ajouter des dépendances lourdes (pandas, torch, etc.) sans discuter d'abord de l'impact mémoire.
 - Le chargement du modèle au démarrage prend 1-2 minutes sur ce matériel, c'est normal et attendu, ne pas essayer de l'optimiser sans raison.
 
 ## Architecture
 
 - `discord.py` (Client + `app_commands.CommandTree`), pas de cogs, tout est dans un seul fichier volontairement (projet perso simple, pas une lib à maintenir).
-- `gensim.models.KeyedVectors` pour charger le modèle word2vec et calculer `model.similarity(mot1, mot2)`.
+- `spacy` pour charger le modèle `fr_core_news_sm` et calculer la similarité via `nlp(word1).similarity(nlp(word2))`.
 - `discord.ext.tasks` pour la tâche planifiée quotidienne (`@tasks.loop(time=datetime.time(hour=0, minute=0))`) qui tire le nouveau mot du jour.
-- Mot du jour tiré via l'API MediaWiki du Wiktionnaire français (`action=query&list=categorymembers&cmtitle=Catégorie:Noms communs en français`), avec un `cmstartsortkeyprefix` aléatoire pour obtenir un tirage pseudo-aléatoire dans la catégorie (~205 000 entrées). Le mot est filtré : doit exister dans le vocabulaire du modèle gensim, ne doit pas contenir d'espace/tiret/apostrophe (locutions composées écartées), ne doit jamais avoir été utilisé (`state["mots_utilises"]`).
+- Mot du jour tiré via l'API MediaWiki du Wiktionnaire français (`action=query&list=categorymembers&cmtitle=Catégorie:Noms communs en français`), avec un `cmstartsortkeyprefix` aléatoire pour obtenir un tirage pseudo-aléatoire dans la catégorie (~205 000 entrées). Le mot est filtré : doit exister dans le vocabulaire spaCy, doit être un nom (POS=NOUN), ne doit pas contenir d'espace/tiret/apostrophe (locutions composées écartées), ne doit jamais avoir été utilisé (`state["mots_utilises"]`), et doit avoir une probabilité suffisante (filtrage des mots trop rares).
 
 ## Schéma de `state.json`
 

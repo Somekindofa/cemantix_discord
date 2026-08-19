@@ -3,12 +3,8 @@ Bot Discord type Cémantix, avec mot du jour tiré automatiquement du
 Wiktionnaire (catégorie "Noms communs en français") chaque nuit à minuit.
 
 Prérequis :
-    pip install discord.py gensim requests python-dotenv
-
-Modèle de vecteurs français à télécharger (une seule fois) :
-    https://fauconnier.github.io/#data
-    -> prends "frWac_no_postag_no_phrase_200_cbow_cut100.bin" (120 Mo)
-    -> place-le dans le même dossier que ce script
+    pip install discord.py spacy requests python-dotenv
+    python -m spacy download fr_core_news_sm
 
 Usage :
     1. Copie .env.example vers .env et remplis TOKEN et CHANNEL_ID.
@@ -23,32 +19,40 @@ from pathlib import Path
 
 import discord
 import requests
+import spacy
 from discord import app_commands
 from discord.ext import tasks
 from dotenv import load_dotenv
-from gensim.models import KeyedVectors
 
 # ---- Config chargée depuis .env (voir .env.example) ----
 load_dotenv()
 TOKEN = os.environ["DISCORD_TOKEN"]
 CHANNEL_ID = int(os.environ["CHANNEL_ID"])
-MODEL_PATH = "frWac_no_postag_no_phrase_200_cbow_cut100.bin"
 STATE_FILE = Path("state.json")
 
 WIKTIONNAIRE_API = "https://fr.wiktionary.org/w/api.php"
 CATEGORIE = "Catégorie:Noms communs en français"
 ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 
-# ---- Chargement du modèle ----
-print("Chargement du modèle (peut prendre 1-2 min sur un Pi)...")
-model = KeyedVectors.load_word2vec_format(MODEL_PATH, binary=True)
+# ---- Chargement du modèle spaCy ----
+print("Chargement du modèle spaCy (peut prendre 1-2 min)...")
+nlp = spacy.load("fr_core_news_sm")
 print("Modèle chargé.")
 
 
 def tirer_mot_wiktionnaire() -> str | None:
     """Interroge l'API du Wiktionnaire pour piocher un nom commun au hasard
     dans la catégorie dédiée. Retourne None si rien d'exploitable n'a été
-    trouvé après plusieurs essais (mot absent du modèle, mot composé, etc.)."""
+    trouvé après plusieurs essais.
+    
+    Filtres appliqués:
+    - Mots composés/locutions (espaces, tirets, apostrophes) exclus.
+    - Mots absents du vocabulaire spaCy exclus.
+    - Mots déjà utilisés exclus.
+    - Seuls les noms (POS=NOUN) sont conservés.
+    - Mots trop rares (prob > MIN_PROB) exclus.
+    """
+    MIN_PROB = -8.0  # Seuil de probabilité (plus bas = mots plus fréquents)
     for _ in range(15):
         lettre = random.choice(ALPHABET)
         params = {
@@ -71,12 +75,25 @@ def tirer_mot_wiktionnaire() -> str | None:
 
         mot = membres[0]["title"].strip().lower()
 
-        # On écarte les mots composés/locutions et ceux absents du modèle,
-        # ou déjà utilisés un jour précédent.
+        # On écarte les mots composés/locutions
         if " " in mot or "-" in mot or "'" in mot:
             continue
-        if mot not in model:
+        
+        # Vérifier que le mot est dans le vocabulaire spaCy
+        if not nlp.vocab.get(mot):
             continue
+        
+        # Vérifier que le mot est un nom (POS=NOUN)
+        doc = nlp(mot)
+        if not any(token.pos_ == "NOUN" for token in doc):
+            continue
+        
+        # Filtre par probabilité (proxy pour la fréquence)
+        # Note: token.prob est la log-probabilité (plus bas = plus fréquent)
+        if all(token.prob > MIN_PROB for token in doc):
+            continue
+        
+        # Vérifier que le mot n'a pas déjà été utilisé
         if mot in state.get("mots_utilises", []):
             continue
 
@@ -137,11 +154,11 @@ def nouveau_mot_du_jour():
 def check_reset():
     """Si aucun mot n'a encore été tiré aujourd'hui (premier lancement du
     bot ce jour-là, ou redémarrage après minuit sans que la tâche planifiée
-    ait tourné), en tire un. Vérifie aussi que le mot cible est dans le modèle."""
+    ait tourné), en tire un. Vérifie aussi que le mot cible est dans le vocabulaire."""
     today = str(datetime.date.today())
     if state["current_date"] != today or state["target"] is None:
         nouveau_mot_du_jour()
-    elif state["target"] not in model:
+    elif not nlp.vocab.get(state["target"]):
         # Mot cible invalide, on en tire un nouveau
         nouveau_mot_du_jour()
 
@@ -260,22 +277,26 @@ async def on_message(message: discord.Message):
         await message.channel.send(embed=build_proches_embed())
         return
 
-    if guess not in model:
-        await message.reply("❓ Mot inconnu du dictionnaire.")
+    if not nlp.vocab.get(guess):
+        await message.reply("❌ Mot inconnu du dictionnaire.")
         return
 
 
     target = current_target()
-    if target not in model:
+    if not nlp.vocab.get(target):
         # Mot cible invalide, on en tire un nouveau et on réessaye
         nouveau_mot_du_jour()
         target = current_target()
         if target is None:
             await message.reply("⚠️ Impossible de tirer un nouveau mot. Réessayez plus tard.")
             return
-    sim = model.similarity(guess, target)
+    
+    # Calcul de la similarité avec spaCy
+    doc1 = nlp(guess)
+    doc2 = nlp(target)
+    sim = doc1.similarity(doc2)
     temp = round(float(sim) * 100, 1)
-    emoji = "🔥" if temp > 60 else ("🌡️" if temp > 30 else "❄️")
+    emoji = "🔥" if temp > 60 else ("🌤️" if temp > 30 else "❄️")
     record_guess(guess, temp)
     save_state()
     await message.reply(
