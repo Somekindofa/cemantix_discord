@@ -137,9 +137,12 @@ def nouveau_mot_du_jour():
 def check_reset():
     """Si aucun mot n'a encore été tiré aujourd'hui (premier lancement du
     bot ce jour-là, ou redémarrage après minuit sans que la tâche planifiée
-    ait tourné), en tire un."""
+    ait tourné), en tire un. Vérifie aussi que le mot cible est dans le modèle."""
     today = str(datetime.date.today())
     if state["current_date"] != today or state["target"] is None:
+        nouveau_mot_du_jour()
+    elif state["target"] not in model:
+        # Mot cible invalide, on en tire un nouveau
         nouveau_mot_du_jour()
 
 
@@ -262,9 +265,14 @@ async def on_message(message: discord.Message):
         return
 
 
+    target = current_target()
     if target not in model:
-        await message.reply("❓ Le mot cible n'est pas dans le dictionnaire. Veuillez redémarrer la partie.")
-        return
+        # Mot cible invalide, on en tire un nouveau et on réessaye
+        nouveau_mot_du_jour()
+        target = current_target()
+        if target is None:
+            await message.reply("⚠️ Impossible de tirer un nouveau mot. Réessayez plus tard.")
+            return
     sim = model.similarity(guess, target)
     temp = round(float(sim) * 100, 1)
     emoji = "🔥" if temp > 60 else ("🌡️" if temp > 30 else "❄️")
