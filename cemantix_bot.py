@@ -85,7 +85,11 @@ def tirer_mot_wiktionnaire() -> str | None:
         
         # Vérifier que le mot est un nom (POS=NOUN)
         doc = nlp(mot)
-        if not any(token.pos_ == "NOUN" for token in doc):
+        # Accepter uniquement les mots à un seul token qui sont des noms
+        if len(doc) == 1 and doc[0].pos_ != "NOUN":
+            continue
+        # Pour les mots multi-tokens (ex: "pomme de terre"), tous doivent être des noms
+        if len(doc) > 1 and not all(token.pos_ == "NOUN" for token in doc):
             continue
         
         # Filtre par probabilité (proxy pour la fréquence)
