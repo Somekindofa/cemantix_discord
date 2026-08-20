@@ -66,9 +66,14 @@ def tirer_mot_wiktionnaire() -> str | None:
     - Mots déjà utilisés exclus.
     - Mots avec une norme L2 trop faible (proxy pour la fréquence) exclus.
     
-    Respecte les limites de l'API Wiktionary (~50 requêtes/seconde).
+    Respecte les limites de l'API Wiktionary avec backoff exponentiel.
     """
     MIN_NORM = 10.0  # Seuil de norme L2 (plus élevé = mots plus fréquents)
+    BASE_DELAY = 1.0  # Délai de base entre les requêtes (1 seconde)
+    MAX_DELAY = 10.0  # Délai maximum (10 secondes)
+    
+    delay = BASE_DELAY
+    consecutive_failures = 0
     
     while True:  # Boucle indéfinie jusqu'à trouver un mot valide
         lettre = random.choice(ALPHABET)
@@ -82,16 +87,26 @@ def tirer_mot_wiktionnaire() -> str | None:
         }
         try:
             resp = requests.get(WIKTIONNAIRE_API, params=params, timeout=10)
+            if resp.status_code == 403:
+                # Rate-limited: increase delay exponentially
+                consecutive_failures += 1
+                delay = min(BASE_DELAY * (2 ** consecutive_failures), MAX_DELAY)
+                logger.warning(f"Rate limited (403). Waiting {delay:.1f}s before retry...")
+                time.sleep(delay)
+                continue
             resp.raise_for_status()
             membres = resp.json().get("query", {}).get("categorymembers", [])
+            # Reset delay on success
+            consecutive_failures = 0
+            delay = BASE_DELAY
         except requests.RequestException as e:
             logger.warning(f"API request failed: {e}")
-            time.sleep(0.02)  # Respecter ~50 requêtes/seconde
+            time.sleep(delay)
             continue
 
         if not membres:
             logger.info(f"No members found for prefix '{lettre}'")
-            time.sleep(0.02)
+            time.sleep(delay)
             continue
 
         mot = membres[0]["title"].strip().lower()
@@ -100,26 +115,26 @@ def tirer_mot_wiktionnaire() -> str | None:
         # On écarte les mots composés/locutions
         if " " in mot or "-" in mot or "'" in mot:
             logger.info(f"Skipping '{mot}': contains spaces/hyphens/apostrophes")
-            time.sleep(0.02)
+            time.sleep(delay)
             continue
         
         # Vérifier que le mot est dans le vocabulaire du modèle
         if mot not in model:
             logger.info(f"Skipping '{mot}': not in model vocab")
-            time.sleep(0.02)
+            time.sleep(delay)
             continue
         
         # Vérifier que le mot n'a pas déjà été utilisé
         if mot in state.get("mots_utilises", []):
             logger.info(f"Skipping '{mot}': already used")
-            time.sleep(0.02)
+            time.sleep(delay)
             continue
         
         # Filtre par norme L2 (proxy pour la fréquence du mot)
         norm = model.get_norm(mot)
         if norm < MIN_NORM:
             logger.info(f"Skipping '{mot}': L2 norm too low ({norm:.2f} < {MIN_NORM})")
-            time.sleep(0.02)
+            time.sleep(delay)
             continue
 
         logger.info(f"Selected word: '{mot}' (L2 norm: {norm:.2f})")
