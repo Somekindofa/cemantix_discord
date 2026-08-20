@@ -16,6 +16,10 @@ Usage:
     - /home/somekindofathing/cemantix-bot/data/vocab/Lexique4.tsv
     - ~/cemantix-bot/data/vocab/Lexique4.tsv
     - ../data/vocab/Lexique4.tsv
+    
+    Supporte plusieurs formats de colonnes:
+    - Format standard: ortho, Lexique4__CgramOrtho, Lexique4__FreqOrtho
+    - Format numéroté: 1_Mot, 6_CgramOrtho, 10_FreqMot/11_FreqOrtho
 """
 
 import sys
@@ -28,10 +32,12 @@ VOCAB_DIR = Path("data/vocab")
 DEFAULT_INPUT = VOCAB_DIR / "Lexique4.tsv"
 DEFAULT_OUTPUT = VOCAB_DIR / "vocab.txt"
 
-# Colonnes Lexique4
-ORTHO_COLUMN = "ortho"
-CGRAM_COLUMN = "Lexique4__CgramOrtho"
-FREQ_COLUMN = "Lexique4__FreqOrtho"
+# Colonnes Lexique4 - plusieurs formats possibles
+# Format standard : ortho, Lexique4__CgramOrtho, Lexique4__FreqOrtho
+# Format numéroté : 1_Mot, 6_CgramOrtho, 10_FreqMot/11_FreqOrtho
+ORTHO_COLUMN_NAMES = ["ortho", "1_Mot", "Mot"]
+CGRAM_COLUMN_NAMES = ["Lexique4__CgramOrtho", "6_CgramOrtho", "CgramOrtho", "Cgram"]
+FREQ_COLUMN_NAMES = ["Lexique4__FreqOrtho", "11_FreqOrtho", "10_FreqMot", "FreqOrtho", "FreqMot", "frequency"]
 
 
 def find_lexique_file(input_path: Path = None) -> Path:
@@ -64,6 +70,23 @@ def find_lexique_file(input_path: Path = None) -> Path:
     return None
 
 
+def find_column(fieldnames, possible_names):
+    """
+    Trouve une colonne parmi plusieurs noms possibles.
+    
+    Args:
+        fieldnames: Liste des noms de colonnes disponibles
+        possible_names: Liste des noms possibles pour la colonne
+    
+    Returns:
+        Le nom de la colonne trouvée, ou None
+    """
+    for name in possible_names:
+        if name in fieldnames:
+            return name
+    return None
+
+
 def filter_lexique_noms(input_path: Path, output_path: Path, min_freq: int = 0, max_words: int = None) -> int:
     """
     Filtre le fichier TSV Lexique pour ne garder que les noms (NOM).
@@ -85,23 +108,33 @@ def filter_lexique_noms(input_path: Path, output_path: Path, min_freq: int = 0, 
     with open(input_path, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f, delimiter='\t')
         
-        # Vérifier que les colonnes nécessaires existent
-        if ORTHO_COLUMN not in reader.fieldnames:
-            print(f"Erreur: Colonne '{ORTHO_COLUMN}' introuvable. Colonnes: {reader.fieldnames}")
+        # Trouver les colonnes nécessaires
+        ortho_col = find_column(reader.fieldnames, ORTHO_COLUMN_NAMES)
+        cgram_col = find_column(reader.fieldnames, CGRAM_COLUMN_NAMES)
+        freq_col = find_column(reader.fieldnames, FREQ_COLUMN_NAMES)
+        
+        if ortho_col is None:
+            print(f"Erreur: Aucune colonne d'orthographe trouvée.")
+            print(f"Colonnes disponibles: {reader.fieldnames}")
+            print(f"Colonnes recherchées: {ORTHO_COLUMN_NAMES}")
             return 0
         
-        if CGRAM_COLUMN not in reader.fieldnames:
-            print(f"Erreur: Colonne '{CGRAM_COLUMN}' introuvable. Colonnes: {reader.fieldnames}")
+        if cgram_col is None:
+            print(f"Erreur: Aucune colonne CgramOrtho trouvée.")
+            print(f"Colonnes disponibles: {reader.fieldnames}")
+            print(f"Colonnes recherchées: {CGRAM_COLUMN_NAMES}")
             return 0
+        
+        print(f"Colonnes utilisées: ortho='{ortho_col}', cgram='{cgram_col}', freq='{freq_col or 'aucune'}'")
         
         # Filtrer les mots
         words_with_freq = []
         for row in reader:
-            cgram = row.get(CGRAM_COLUMN, "").strip()
+            cgram = row.get(cgram_col, "").strip()
             # On veut uniquement les lignes où CgramOrtho est exactement "NOM"
             if cgram == "NOM":
-                ortho = row.get(ORTHO_COLUMN, "").strip()
-                freq = row.get(FREQ_COLUMN, "0").strip()
+                ortho = row.get(ortho_col, "").strip()
+                freq = row.get(freq_col, "0").strip() if freq_col else "0"
                 
                 # Nettoyer le mot
                 word = ortho.lower()
