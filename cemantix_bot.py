@@ -44,11 +44,16 @@ ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 
 # ---- Chargement du modèle spaCy ----
 print("Chargement du modèle spaCy (peut prendre 1-2 min)...")
-nlp = spacy.load("fr_core_news_sm")
-print("Modèle chargé.")
-logger.info(f"SpaCy model loaded: {nlp.meta['name']}")
-logger.info(f"Vocab size: {len(nlp.vocab)}")
-logger.info(f"Sample words in vocab: {list(nlp.vocab)[:10]}")
+try:
+    nlp = spacy.load("fr_core_news_sm")
+    print("Modèle chargé.")
+    logger.info(f"SpaCy model loaded: {nlp.meta['name']}")
+    logger.info(f"Vocab size: {len(nlp.vocab)}")
+    logger.info(f"Sample words in vocab: {[str(word) for word in list(nlp.vocab)[:10]]}")
+except OSError as e:
+    logger.error(f"Failed to load fr_core_news_sm: {e}")
+    logger.error("Please run: python -m spacy download fr_core_news_sm")
+    raise
 
 
 def tirer_mot_wiktionnaire() -> str | None:
