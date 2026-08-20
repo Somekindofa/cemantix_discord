@@ -1,0 +1,13 @@
+{
+  "target": null,
+  "current_date": null,
+  "found": false,
+  "attempts_today": 0,
+  "players": {},
+  "guesses_today": {},
+  "mots_utilises": [],
+  "neighbors": [],
+  "mode": "api",
+  "vocab_loaded": false,
+  "embedding_dim": null
+}
