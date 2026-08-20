@@ -80,7 +80,7 @@ def tirer_mot_wiktionnaire() -> str | None:
             continue
         
         # Vérifier que le mot est dans le vocabulaire spaCy
-        if not nlp.vocab.get(mot):
+        if mot not in nlp.vocab:
             continue
         
         # Vérifier que le mot est un nom (POS=NOUN)
@@ -162,7 +162,7 @@ def check_reset():
     today = str(datetime.date.today())
     if state["current_date"] != today or state["target"] is None:
         nouveau_mot_du_jour()
-    elif not nlp.vocab.get(state["target"]):
+    elif state["target"] not in nlp.vocab:
         # Mot cible invalide, on en tire un nouveau
         nouveau_mot_du_jour()
 
@@ -281,13 +281,13 @@ async def on_message(message: discord.Message):
         await message.channel.send(embed=build_proches_embed())
         return
 
-    if not nlp.vocab.get(guess):
+    if guess not in nlp.vocab:
         await message.reply("❌ Mot inconnu du dictionnaire.")
         return
 
 
     target = current_target()
-    if not nlp.vocab.get(target):
+    if target not in nlp.vocab:
         # Mot cible invalide, on en tire un nouveau et on réessaye
         nouveau_mot_du_jour()
         target = current_target()
