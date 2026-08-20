@@ -60,6 +60,11 @@ def tirer_mot_wiktionnaire() -> str | None:
     """Interroge l'API du Wiktionnaire pour piocher un nom commun au hasard
     dans la catégorie dédiée. Boucle indéfiniment jusqu'à trouver un mot valide.
     
+    Optimisé pour minimiser les appels API:
+    - Récupère 50 mots par requête (cmlimit=50).
+    - Filtre localement les mots invalides (tirets, apostrophes, etc.).
+    - Sélectionne aléatoirement parmi les mots valides.
+    
     Filtres appliqués:
     - Mots composés/locutions (espaces, tirets, apostrophes) exclus.
     - Mots absents du modèle word2vec exclus.
@@ -81,7 +86,7 @@ def tirer_mot_wiktionnaire() -> str | None:
             "action": "query",
             "list": "categorymembers",
             "cmtitle": CATEGORIE,
-            "cmlimit": 1,
+            "cmlimit": 50,  # Récupérer 50 mots par requête
             "cmstartsortkeyprefix": lettre,
             "format": "json",
         }
@@ -109,36 +114,35 @@ def tirer_mot_wiktionnaire() -> str | None:
             time.sleep(delay)
             continue
 
-        mot = membres[0]["title"].strip().lower()
-        logger.info(f"Candidate word: '{mot}'")
+        # Filtrer localement les mots valides
+        valid_words = []
+        for member in membres:
+            mot = member["title"].strip().lower()
+            # Écarte les mots composés/locutions
+            if " " in mot or "-" in mot or "'" in mot:
+                continue
+            # Vérifier que le mot est dans le vocabulaire du modèle
+            if mot not in model:
+                continue
+            # Vérifier que le mot n'a pas déjà été utilisé
+            if mot in state.get("mots_utilises", []):
+                continue
+            # Filtre par norme L2
+            norm = model.get_norm(mot)
+            if norm < MIN_NORM:
+                continue
+            valid_words.append(mot)
 
-        # On écarte les mots composés/locutions
-        if " " in mot or "-" in mot or "'" in mot:
-            logger.info(f"Skipping '{mot}': contains spaces/hyphens/apostrophes")
+        if valid_words:
+            # Sélectionner aléatoirement parmi les mots valides
+            mot = random.choice(valid_words)
+            logger.info(f"Selected word: '{mot}' (L2 norm: {model.get_norm(mot):.2f})")
+            return mot
+        else:
+            # Aucun mot valide trouvé, réessayer avec une autre lettre
+            logger.info(f"No valid words found for prefix '{lettre}', retrying...")
             time.sleep(delay)
             continue
-        
-        # Vérifier que le mot est dans le vocabulaire du modèle
-        if mot not in model:
-            logger.info(f"Skipping '{mot}': not in model vocab")
-            time.sleep(delay)
-            continue
-        
-        # Vérifier que le mot n'a pas déjà été utilisé
-        if mot in state.get("mots_utilises", []):
-            logger.info(f"Skipping '{mot}': already used")
-            time.sleep(delay)
-            continue
-        
-        # Filtre par norme L2 (proxy pour la fréquence du mot)
-        norm = model.get_norm(mot)
-        if norm < MIN_NORM:
-            logger.info(f"Skipping '{mot}': L2 norm too low ({norm:.2f} < {MIN_NORM})")
-            time.sleep(delay)
-            continue
-
-        logger.info(f"Selected word: '{mot}' (L2 norm: {norm:.2f})")
-        return mot
 
 
 def load_state() -> dict:
