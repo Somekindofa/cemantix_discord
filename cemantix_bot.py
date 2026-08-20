@@ -25,6 +25,13 @@ from discord import app_commands
 from discord.ext import tasks
 from dotenv import load_dotenv
 
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # ---- Config chargée depuis .env (voir .env.example) ----
 load_dotenv()
 TOKEN = os.environ["DISCORD_TOKEN"]
