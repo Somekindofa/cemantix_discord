@@ -3,8 +3,12 @@ Bot Discord type Cémantix, avec mot du jour tiré automatiquement du
 Wiktionnaire (catégorie "Noms communs en français") chaque nuit à minuit.
 
 Prérequis :
-    pip install discord.py spacy requests python-dotenv
-    python -m spacy download fr_core_news_sm
+    pip install discord.py gensim requests python-dotenv
+
+Modèle de vecteurs français à télécharger (une seule fois) :
+    https://fauconnier.github.io/#data
+    -> prends "frWac_no_postag_no_phrase_200_cbow_cut100.bin" (120 Mo)
+    -> place-le dans le même dossier que ce script
 
 Usage :
     1. Copie .env.example vers .env et remplis TOKEN et CHANNEL_ID.
@@ -13,19 +17,20 @@ Usage :
 
 import datetime
 import json
+import logging
 import os
 import random
+import time
 from pathlib import Path
 
-import logging
 import discord
 import requests
-import spacy
 from discord import app_commands
 from discord.ext import tasks
 from dotenv import load_dotenv
+from gensim.models import KeyedVectors
 
-# Set up logging
+# Set up logging for journalctl
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
@@ -36,41 +41,36 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 TOKEN = os.environ["DISCORD_TOKEN"]
 CHANNEL_ID = int(os.environ["CHANNEL_ID"])
+MODEL_PATH = "frWac_no_postag_no_phrase_200_cbow_cut100.bin"
 STATE_FILE = Path("state.json")
 
 WIKTIONNAIRE_API = "https://fr.wiktionary.org/w/api.php"
 CATEGORIE = "Catégorie:Noms communs en français"
 ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 
-# ---- Chargement du modèle spaCy ----
-print("Chargement du modèle spaCy (peut prendre 1-2 min)...")
-try:
-    nlp = spacy.load("fr_core_news_sm")
-    print("Modèle chargé.")
-    logger.info(f"SpaCy model loaded: {nlp.meta['name']}")
-    logger.info(f"Vocab size: {len(nlp.vocab)}")
-    logger.info(f"Sample words in vocab: {[str(word) for word in list(nlp.vocab)[:10]]}")
-except OSError as e:
-    logger.error(f"Failed to load fr_core_news_sm: {e}")
-    logger.error("Please run: python -m spacy download fr_core_news_sm")
-    raise
+# ---- Chargement du modèle ----
+print("Chargement du modèle (peut prendre 1-2 min sur un Pi)...")
+model = KeyedVectors.load_word2vec_format(MODEL_PATH, binary=True)
+print("Modèle chargé.")
+logger.info(f"Gensim model loaded: {MODEL_PATH}")
+logger.info(f"Vocab size: {len(model.key_to_index)}")
 
 
 def tirer_mot_wiktionnaire() -> str | None:
     """Interroge l'API du Wiktionnaire pour piocher un nom commun au hasard
-    dans la catégorie dédiée. Retourne None si rien d'exploitable n'a été
-    trouvé après plusieurs essais.
+    dans la catégorie dédiée. Boucle indéfiniment jusqu'à trouver un mot valide.
     
     Filtres appliqués:
     - Mots composés/locutions (espaces, tirets, apostrophes) exclus.
-    - Mots absents du vocabulaire spaCy exclus.
+    - Mots absents du modèle word2vec exclus.
     - Mots déjà utilisés exclus.
-    - Seuls les noms (POS=NOUN) sont conservés.
-    - Mots trop rares (prob > MIN_PROB) exclus.
+    - Mots avec une norme L2 trop faible (proxy pour la fréquence) exclus.
+    
+    Respecte les limites de l'API Wiktionary (~50 requêtes/seconde).
     """
-    MIN_PROB = -8.0  # Seuil de probabilité (plus bas = mots plus fréquents)
-    logger.info("Starting word selection from Wiktionary...")
-    for _ in range(15):
+    MIN_NORM = 10.0  # Seuil de norme L2 (plus élevé = mots plus fréquents)
+    
+    while True:  # Boucle indéfinie jusqu'à trouver un mot valide
         lettre = random.choice(ALPHABET)
         params = {
             "action": "query",
@@ -84,45 +84,46 @@ def tirer_mot_wiktionnaire() -> str | None:
             resp = requests.get(WIKTIONNAIRE_API, params=params, timeout=10)
             resp.raise_for_status()
             membres = resp.json().get("query", {}).get("categorymembers", [])
-        except requests.RequestException:
+        except requests.RequestException as e:
+            logger.warning(f"API request failed: {e}")
+            time.sleep(0.02)  # Respecter ~50 requêtes/seconde
             continue
 
         if not membres:
+            logger.info(f"No members found for prefix '{lettre}'")
+            time.sleep(0.02)
             continue
 
         mot = membres[0]["title"].strip().lower()
+        logger.info(f"Candidate word: '{mot}'")
 
         # On écarte les mots composés/locutions
         if " " in mot or "-" in mot or "'" in mot:
+            logger.info(f"Skipping '{mot}': contains spaces/hyphens/apostrophes")
+            time.sleep(0.02)
             continue
         
-        # Vérifier que le mot est dans le vocabulaire spaCy
-        if mot.lower() not in nlp.vocab:
-            continue
-        
-        # Vérifier que le mot est un nom (POS=NOUN)
-        doc = nlp(mot)
-        # Accepter uniquement les mots à un seul token qui sont des noms
-        if len(doc) == 1 and doc[0].pos_ != "NOUN":
-            continue
-        # Pour les mots multi-tokens (ex: "pomme de terre"), tous doivent être des noms
-        if len(doc) > 1 and not all(token.pos_ == "NOUN" for token in doc):
-            continue
-        
-        # Filtre par probabilité (proxy pour la fréquence)
-        # Note: token.prob est la log-probabilité (plus bas = plus fréquent)
-        if all(token.prob > MIN_PROB for token in doc):
+        # Vérifier que le mot est dans le vocabulaire du modèle
+        if mot not in model:
+            logger.info(f"Skipping '{mot}': not in model vocab")
+            time.sleep(0.02)
             continue
         
         # Vérifier que le mot n'a pas déjà été utilisé
         if mot in state.get("mots_utilises", []):
+            logger.info(f"Skipping '{mot}': already used")
+            time.sleep(0.02)
+            continue
+        
+        # Filtre par norme L2 (proxy pour la fréquence du mot)
+        norm = model.get_norm(mot)
+        if norm < MIN_NORM:
+            logger.info(f"Skipping '{mot}': L2 norm too low ({norm:.2f} < {MIN_NORM})")
+            time.sleep(0.02)
             continue
 
-        logger.info(f"Selected word: '{mot}'")
+        logger.info(f"Selected word: '{mot}' (L2 norm: {norm:.2f})")
         return mot
-
-    logger.warning("Failed to select a word after 15 attempts")
-    return None
 
 
 def load_state() -> dict:
@@ -137,6 +138,7 @@ def load_state() -> dict:
         "players": {},
         "guesses_today": {},
         "mots_utilises": [],
+        "neighbors": [],  # 500 plus proches voisins du mot cible
     }
     if STATE_FILE.exists():
         with open(STATE_FILE, encoding="utf-8") as f:
@@ -157,10 +159,10 @@ state = load_state()
 
 def nouveau_mot_du_jour():
     """Tire un nouveau mot, l'enregistre comme mot du jour, et réinitialise
-    l'état de la partie."""
+    l'état de la partie. Précalcule également les 500 plus proches voisins."""
     mot = tirer_mot_wiktionnaire()
     if mot is None:
-        print("⚠️  Impossible de tirer un nouveau mot, on garde l'ancien.")
+        logger.error("Failed to select a word after many attempts")
         return
 
     today = str(datetime.date.today())
@@ -169,6 +171,16 @@ def nouveau_mot_du_jour():
     state["found"] = False
     state["attempts_today"] = 0
     state["guesses_today"] = {}
+    
+    # Précalculer les 500 plus proches voisins
+    try:
+        neighbors = [word for word, _ in model.most_similar(mot, topn=500)]
+        state["neighbors"] = neighbors
+        logger.info(f"Precomputed 500 neighbors for '{mot}'")
+    except KeyError as e:
+        logger.error(f"Failed to compute neighbors for '{mot}': {e}")
+        state["neighbors"] = []
+    
     state["mots_utilises"].append(mot)
     save_state()
     print(f"Nouveau mot du jour tiré : {mot}")
@@ -177,11 +189,11 @@ def nouveau_mot_du_jour():
 def check_reset():
     """Si aucun mot n'a encore été tiré aujourd'hui (premier lancement du
     bot ce jour-là, ou redémarrage après minuit sans que la tâche planifiée
-    ait tourné), en tire un. Vérifie aussi que le mot cible est dans le vocabulaire."""
+    ait tourné), en tire un. Vérifie aussi que le mot cible est dans le modèle."""
     today = str(datetime.date.today())
     if state["current_date"] != today or state["target"] is None:
         nouveau_mot_du_jour()
-    elif state["target"].lower() not in nlp.vocab:
+    elif state["target"] not in model:
         # Mot cible invalide, on en tire un nouveau
         nouveau_mot_du_jour()
 
@@ -209,16 +221,14 @@ def record_guess(word: str, temp: float):
 
 
 def make_bar(temp: float, length: int = 10) -> str:
-    """Construit une barre de progression en blocs Unicode (sans backticks,
-    l'alignement se fait au niveau du bloc de code englobant)."""
+    """Construit une barre de progression en blocs Unicode."""
     pct = max(0.0, min(100.0, temp))
     filled = round(pct / 100 * length)
     return "█" * filled + "░" * (length - filled)
 
 
 def build_proches_embed() -> discord.Embed:
-    """Construit l'embed du top 10 des mots les plus proches proposés aujourd'hui.
-    Tout le tableau est dans un seul bloc de code pour que les colonnes s'alignent."""
+    """Construit l'embed du top 10 des mots les plus proches proposés aujourd'hui."""
     embed = discord.Embed(
         title="🔥 Top 10 des mots les plus proches",
         color=discord.Color.orange(),
@@ -271,6 +281,7 @@ async def on_ready():
     if not tirage_minuit.is_running():
         tirage_minuit.start()
     print(f"Connecté en tant que {client.user}")
+    logger.info(f"Bot connected as {client.user}")
 
 
 @client.event
@@ -300,31 +311,30 @@ async def on_message(message: discord.Message):
         await message.channel.send(embed=build_proches_embed())
         return
 
-    if guess.lower() not in nlp.vocab:
+    if guess not in model:
         await message.reply("❌ Mot inconnu du dictionnaire.")
         return
 
-
-    target = current_target()
-    if target.lower() not in nlp.vocab:
-        # Mot cible invalide, on en tire un nouveau et on réessaye
-        nouveau_mot_du_jour()
-        target = current_target()
-        if target is None:
-            await message.reply("⚠️ Impossible de tirer un nouveau mot. Réessayez plus tard.")
-            return
-    
-    # Calcul de la similarité avec spaCy
-    doc1 = nlp(guess)
-    doc2 = nlp(target)
-    sim = doc1.similarity(doc2)
+    # Calculer la similarité
+    sim = model.similarity(guess, target)
     temp = round(float(sim) * 100, 1)
-    emoji = "🔥" if temp > 60 else ("🌤️" if temp > 30 else "❄️")
+    
+    # Obtenir le rang dans les voisins précalculés (si disponible)
+    neighbors = state.get("neighbors", [])
+    rank = neighbors.index(guess) + 1 if guess in neighbors else None
+    
+    # Formater la réponse
+    if rank is not None and 1 <= rank <= 500:
+        # Afficher la barre de progression + le rang
+        emoji = "🔥" if temp > 60 else ("☁️" if temp > 30 else "❄️")
+        response = f"{emoji} `{make_bar(temp)}` {temp}% (Rank: {rank}/500)"
+    else:
+        # Afficher uniquement le score de similarité (pas de barre)
+        response = f"{temp}%"
+    
     record_guess(guess, temp)
     save_state()
-    await message.reply(
-        content=f"{emoji} `{make_bar(temp)}` {temp}%", embed=build_proches_embed()
-    )
+    await message.reply(content=response, embed=build_proches_embed())
 
 
 @client.tree.command(name="start", description="Affiche l'état de la partie du jour")
