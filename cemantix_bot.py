@@ -167,7 +167,7 @@ async def nouveau_mot_du_jour():
     
     state["mots_utilises"].append(mot)
     save_state()
-    print(f"Nouveau mot du jour tiré : {mot}")
+    logger.info(f"Nouveau mot du jour tire: {mot}")
 
 
 async def check_reset():
