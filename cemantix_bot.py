@@ -17,6 +17,7 @@ import os
 import random
 from pathlib import Path
 
+import logging
 import discord
 import requests
 import spacy
@@ -38,6 +39,9 @@ ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 print("Chargement du modèle spaCy (peut prendre 1-2 min)...")
 nlp = spacy.load("fr_core_news_sm")
 print("Modèle chargé.")
+logger.info(f"SpaCy model loaded: {nlp.meta['name']}")
+logger.info(f"Vocab size: {len(nlp.vocab)}")
+logger.info(f"Sample words in vocab: {list(nlp.vocab)[:10]}")
 
 
 def tirer_mot_wiktionnaire() -> str | None:
@@ -53,6 +57,7 @@ def tirer_mot_wiktionnaire() -> str | None:
     - Mots trop rares (prob > MIN_PROB) exclus.
     """
     MIN_PROB = -8.0  # Seuil de probabilité (plus bas = mots plus fréquents)
+    logger.info("Starting word selection from Wiktionary...")
     for _ in range(15):
         lettre = random.choice(ALPHABET)
         params = {
@@ -80,7 +85,7 @@ def tirer_mot_wiktionnaire() -> str | None:
             continue
         
         # Vérifier que le mot est dans le vocabulaire spaCy
-        if mot not in nlp.vocab:
+        if mot.lower() not in nlp.vocab:
             continue
         
         # Vérifier que le mot est un nom (POS=NOUN)
@@ -101,8 +106,10 @@ def tirer_mot_wiktionnaire() -> str | None:
         if mot in state.get("mots_utilises", []):
             continue
 
+        logger.info(f"Selected word: '{mot}'")
         return mot
 
+    logger.warning("Failed to select a word after 15 attempts")
     return None
 
 
@@ -162,7 +169,7 @@ def check_reset():
     today = str(datetime.date.today())
     if state["current_date"] != today or state["target"] is None:
         nouveau_mot_du_jour()
-    elif state["target"] not in nlp.vocab:
+    elif state["target"].lower() not in nlp.vocab:
         # Mot cible invalide, on en tire un nouveau
         nouveau_mot_du_jour()
 
@@ -281,13 +288,13 @@ async def on_message(message: discord.Message):
         await message.channel.send(embed=build_proches_embed())
         return
 
-    if guess not in nlp.vocab:
+    if guess.lower() not in nlp.vocab:
         await message.reply("❌ Mot inconnu du dictionnaire.")
         return
 
 
     target = current_target()
-    if target not in nlp.vocab:
+    if target.lower() not in nlp.vocab:
         # Mot cible invalide, on en tire un nouveau et on réessaye
         nouveau_mot_du_jour()
         target = current_target()
