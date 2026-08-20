@@ -21,6 +21,7 @@ import logging
 import os
 import random
 import asyncio
+import numpy as np
 import time
 from pathlib import Path
 
@@ -130,7 +131,7 @@ async def tirer_mot_wiktionnaire() -> str | None:
             if mot in state.get("mots_utilises", []):
                 continue
             # Filtre par norme L2
-            norm = model.get_norm(mot)
+            norm = np.linalg.norm(model[mot])
             if norm < MIN_NORM:
                 continue
             valid_words.append(mot)
@@ -138,7 +139,7 @@ async def tirer_mot_wiktionnaire() -> str | None:
         if valid_words:
             # Sélectionner aléatoirement parmi les mots valides
             mot = random.choice(valid_words)
-            logger.info(f"Selected word: '{mot}' (L2 norm: {model.get_norm(mot):.2f})")
+            logger.info(f"Selected word: '{mot}' (L2 norm: {norm:.2f})")
             return mot
         else:
             # Aucun mot valide trouvé, réessayer avec une autre lettre
