@@ -3,15 +3,19 @@
 Script pour filtrer Lexique TSV et extraire uniquement les noms communs (NOM).
 
 Usage:
-    python filter_lexique_noms.py /chemin/vers/Lexique4.tsv [options]
+    python filter_lexique_noms.py [/chemin/vers/Lexique4.tsv] [options]
     
     Options:
         --min-freq N    Filtrer les mots avec fréquence >= N (défaut: 0 = tous)
         --max-words N   Limiter à N mots (défaut: tous)
         --output FILE   Fichier de sortie (défaut: data/vocab/vocab.txt)
     
-    Ou place le fichier dans data/vocab/ et lance:
-    python filter_lexique_noms.py
+    Si aucun chemin n'est spécifié, le script cherche automatiquement dans:
+    - data/vocab/Lexique4.tsv
+    - Lexique4.tsv (répertoire courant)
+    - /home/somekindofathing/cemantix-bot/data/vocab/Lexique4.tsv
+    - ~/cemantix-bot/data/vocab/Lexique4.tsv
+    - ../data/vocab/Lexique4.tsv
 """
 
 import sys
@@ -28,6 +32,36 @@ DEFAULT_OUTPUT = VOCAB_DIR / "vocab.txt"
 ORTHO_COLUMN = "ortho"
 CGRAM_COLUMN = "Lexique4__CgramOrtho"
 FREQ_COLUMN = "Lexique4__FreqOrtho"
+
+
+def find_lexique_file(input_path: Path = None) -> Path:
+    """
+    Trouve le fichier Lexique4.tsv dans les emplacements courants.
+    
+    Args:
+        input_path: Chemin spécifié par l'utilisateur (si None, cherche automatiquement)
+    
+    Returns:
+        Path vers le fichier trouvé, ou None
+    """
+    if input_path and input_path.exists():
+        return input_path
+    
+    # Liste des chemins à essayer
+    search_paths = [
+        VOCAB_DIR / "Lexique4.tsv",
+        Path("Lexique4.tsv"),
+        Path("/home/somekindofathing/cemantix-bot/data/vocab/Lexique4.tsv"),
+        Path("~/cemantix-bot/data/vocab/Lexique4.tsv").expanduser(),
+        Path("../data/vocab/Lexique4.tsv"),
+        Path("../../data/vocab/Lexique4.tsv"),
+    ]
+    
+    for path in search_paths:
+        if path.exists():
+            return path
+    
+    return None
 
 
 def filter_lexique_noms(input_path: Path, output_path: Path, min_freq: int = 0, max_words: int = None) -> int:
@@ -113,8 +147,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "input", 
         nargs='?', 
-        default=str(DEFAULT_INPUT),
-        help="Chemin vers le fichier TSV Lexique4 (défaut: data/vocab/Lexique4.tsv)"
+        default=None,
+        help="Chemin vers le fichier TSV Lexique4 (optionnel)"
     )
     parser.add_argument(
         "--min-freq", 
@@ -137,15 +171,26 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    input_path = Path(args.input)
+    # Trouver le fichier
+    input_path = None
+    if args.input:
+        input_path = Path(args.input)
+    
+    input_path = find_lexique_file(input_path)
     output_path = Path(args.output)
     
-    if not input_path.exists():
-        print(f"Erreur: Fichier introuvable: {input_path}")
-        print(f"Usage: python {sys.argv[0]} /chemin/vers/Lexique4.tsv [options]")
-        print(f"Par défaut, cherche: {DEFAULT_INPUT}")
+    if not input_path:
+        print(f"Erreur: Fichier Lexique4.tsv introuvable.")
+        print(f"J'ai cherché dans:")
+        print(f"  - data/vocab/Lexique4.tsv")
+        print(f"  - Lexique4.tsv (répertoire courant)")
+        print(f"  - /home/somekindofathing/cemantix-bot/data/vocab/Lexique4.tsv")
+        print(f"  - ~/cemantix-bot/data/vocab/Lexique4.tsv")
+        print(f"  - ../data/vocab/Lexique4.tsv")
+        print(f"\nSpécifiez le chemin avec: python {sys.argv[0]} /chemin/vers/Lexique4.tsv")
         sys.exit(1)
     
+    print(f"Fichier trouvé: {input_path}")
     count = filter_lexique_noms(input_path, output_path, args.min_freq, args.max_words)
     
     if count > 0:
