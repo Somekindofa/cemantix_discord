@@ -307,6 +307,8 @@ async def on_message(message: discord.Message):
     rank = neighbors.index(guess) + 1 if guess in neighbors else None
     
     # Appliquer une échelle logarithmique pour compresser les scores
+    # Clamp similarity to valid range [0, 1] to avoid log1p issues
+    sim = max(0.0, min(1.0, sim))
     compressed_sim = np.log1p(sim * 10) / np.log1p(10)  # Échelle [0, 1]
     compressed_temp = round(float(compressed_sim) * 100, 1)
     
