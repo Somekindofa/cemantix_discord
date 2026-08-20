@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import random
+import asyncio
 import time
 from pathlib import Path
 
@@ -56,7 +57,7 @@ logger.info(f"Gensim model loaded: {MODEL_PATH}")
 logger.info(f"Vocab size: {len(model.key_to_index)}")
 
 
-def tirer_mot_wiktionnaire() -> str | None:
+async def tirer_mot_wiktionnaire() -> str | None:
     """Interroge l'API du Wiktionnaire pour piocher un nom commun au hasard
     dans la catégorie dédiée. Boucle indéfiniment jusqu'à trouver un mot valide.
     
@@ -97,7 +98,7 @@ def tirer_mot_wiktionnaire() -> str | None:
                 consecutive_failures += 1
                 delay = min(BASE_DELAY * (2 ** consecutive_failures), MAX_DELAY)
                 logger.warning(f"Rate limited (403). Waiting {delay:.1f}s before retry...")
-                time.sleep(delay)
+                await asyncio.sleep(delay)
                 continue
             resp.raise_for_status()
             membres = resp.json().get("query", {}).get("categorymembers", [])
@@ -106,12 +107,12 @@ def tirer_mot_wiktionnaire() -> str | None:
             delay = BASE_DELAY
         except requests.RequestException as e:
             logger.warning(f"API request failed: {e}")
-            time.sleep(delay)
+            await asyncio.sleep(delay)
             continue
 
         if not membres:
             logger.info(f"No members found for prefix '{lettre}'")
-            time.sleep(delay)
+            await asyncio.sleep(delay)
             continue
 
         # Filtrer localement les mots valides
@@ -141,7 +142,7 @@ def tirer_mot_wiktionnaire() -> str | None:
         else:
             # Aucun mot valide trouvé, réessayer avec une autre lettre
             logger.info(f"No valid words found for prefix '{lettre}', retrying...")
-            time.sleep(delay)
+            await asyncio.sleep(delay)
             continue
 
 
@@ -176,10 +177,10 @@ def save_state():
 state = load_state()
 
 
-def nouveau_mot_du_jour():
+async def nouveau_mot_du_jour():
     """Tire un nouveau mot, l'enregistre comme mot du jour, et réinitialise
     l'état de la partie. Précalcule également les 500 plus proches voisins."""
-    mot = tirer_mot_wiktionnaire()
+    mot = await tirer_mot_wiktionnaire()
     if mot is None:
         logger.error("Failed to select a word after many attempts")
         return
@@ -205,16 +206,16 @@ def nouveau_mot_du_jour():
     print(f"Nouveau mot du jour tiré : {mot}")
 
 
-def check_reset():
+async def check_reset():
     """Si aucun mot n'a encore été tiré aujourd'hui (premier lancement du
     bot ce jour-là, ou redémarrage après minuit sans que la tâche planifiée
     ait tourné), en tire un. Vérifie aussi que le mot cible est dans le modèle."""
     today = str(datetime.date.today())
     if state["current_date"] != today or state["target"] is None:
-        nouveau_mot_du_jour()
+        await nouveau_mot_du_jour()
     elif state["target"] not in model:
         # Mot cible invalide, on en tire un nouveau
-        nouveau_mot_du_jour()
+        await nouveau_mot_du_jour()
 
 
 def current_target() -> str:
@@ -288,7 +289,7 @@ client = CemantixClient()
 
 @tasks.loop(time=datetime.time(hour=0, minute=0))
 async def tirage_minuit():
-    nouveau_mot_du_jour()
+    await nouveau_mot_du_jour()
     channel = client.get_channel(CHANNEL_ID)
     if channel is not None:
         await channel.send("🌅 Nouveau mot du jour disponible, à vous de jouer !")
@@ -296,7 +297,7 @@ async def tirage_minuit():
 
 @client.event
 async def on_ready():
-    check_reset()
+    await check_reset()
     if not tirage_minuit.is_running():
         tirage_minuit.start()
     print(f"Connecté en tant que {client.user}")
@@ -308,7 +309,7 @@ async def on_message(message: discord.Message):
     if message.author.bot or message.channel.id != CHANNEL_ID:
         return
 
-    check_reset()
+    await check_reset()
     if state["found"]:
         return
 
