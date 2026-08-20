@@ -196,9 +196,9 @@ async def nouveau_mot_du_jour():
     
     # Précalculer les 500 plus proches voisins
     try:
-        neighbors = [word for word, _ in model.most_similar(mot, topn=500)]
+        neighbors = [word for word, _ in model.most_similar(mot, topn=100)]
         state["neighbors"] = neighbors
-        logger.info(f"Precomputed 500 neighbors for '{mot}'")
+        logger.info(f"Precomputed 100 neighbors for '{mot}'")
     except KeyError as e:
         logger.error(f"Failed to compute neighbors for '{mot}': {e}")
         state["neighbors"] = []
@@ -345,14 +345,18 @@ async def on_message(message: discord.Message):
     neighbors = state.get("neighbors", [])
     rank = neighbors.index(guess) + 1 if guess in neighbors else None
     
+    # Appliquer une échelle logarithmique pour compresser les scores
+    compressed_sim = np.log1p(sim * 10) / np.log1p(10)  # Échelle [0, 1]
+    compressed_temp = round(float(compressed_sim) * 100, 1)
+    
     # Formater la réponse
-    if rank is not None and 1 <= rank <= 500:
+    if rank is not None and 1 <= rank <= 100:
         # Afficher la barre de progression + le rang
-        emoji = "🔥" if temp > 60 else ("☁️" if temp > 30 else "❄️")
-        response = f"{emoji} `{make_bar(temp)}` {temp}% (Rank: {rank}/500)"
+        emoji = "🔥" if compressed_temp > 60 else ("☁️" if compressed_temp > 30 else "❄️")
+        response = f"{emoji} `{make_bar(compressed_temp)}` {compressed_temp}% (Rank: {rank}/100)"
     else:
-        # Afficher uniquement le score de similarité (pas de barre)
-        response = f"{temp}%"
+        # Afficher uniquement la similarité en décimal (pas de barre)
+        response = f"{sim:.2f}"
     
     record_guess(guess, temp)
     save_state()
