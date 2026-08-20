@@ -1,14 +1,19 @@
 """
-Bot Discord type Cémantix, avec mot du jour tiré automatiquement du
-Wiktionnaire (catégorie "Noms communs en français") chaque nuit à minuit.
+Bot Discord type Cémantix, avec mot du jour tiré aléatoirement depuis
+une liste pré-filtrée de noms communs (dico_mm.txt ou dico_ms.txt).
 
 Prérequis :
-    pip install discord.py gensim requests python-dotenv
+    pip install discord.py gensim numpy python-dotenv
 
 Modèle de vecteurs français à télécharger (une seule fois) :
     https://fauconnier.github.io/#data
-    -> prends "frWac_no_postag_no_phrase_200_cbow_cut100.bin" (120 Mo)
+    -> prends "frWac_non_lem_no_postag_no_phrase_200_cbow_cut100.bin" (120 Mo)
     -> place-le dans le même dossier que ce script
+
+Fichiers de mots à télécharger (une seule fois) :
+    https://raw.githubusercontent.com/TikSL/semanTikSl/main/dico_mm.txt
+    https://raw.githubusercontent.com/TikSL/semanTikSl/main/dico_ms.txt
+    -> place-les dans le même dossier que ce script
 
 Usage :
     1. Copie .env.example vers .env et remplis TOKEN et CHANNEL_ID.
@@ -22,11 +27,9 @@ import os
 import random
 import asyncio
 import numpy as np
-import time
 from pathlib import Path
 
 import discord
-import requests
 from discord import app_commands
 from discord.ext import tasks
 from dotenv import load_dotenv
@@ -46,10 +49,6 @@ CHANNEL_ID = int(os.environ["CHANNEL_ID"])
 MODEL_PATH = "frWac_non_lem_no_postag_no_phrase_200_cbow_cut100.bin"
 STATE_FILE = Path("state.json")
 
-WIKTIONNAIRE_API = "https://fr.wiktionary.org/w/api.php"
-CATEGORIE = "Catégorie:Noms communs en français"
-ALPHABET = "abcdefghijklmnopqrstuvwxyz"
-
 # ---- Chargement du modèle ----
 print("Chargement du modèle (peut prendre 1-2 min sur un Pi)...")
 model = KeyedVectors.load_word2vec_format(MODEL_PATH, binary=True)
@@ -59,93 +58,56 @@ logger.info(f"Vocab size: {len(model.key_to_index)}")
 
 
 async def tirer_mot_wiktionnaire() -> str | None:
-    """Interroge l'API du Wiktionnaire pour piocher un nom commun au hasard
-    dans la catégorie dédiée. Boucle indéfiniment jusqu'à trouver un mot valide.
+    """Sélectionne un mot aléatoire depuis une liste pré-filtrée de noms communs.
     
-    Optimisé pour minimiser les appels API:
-    - Récupère 50 mots par requête (cmlimit=50).
-    - Filtre localement les mots invalides (tirets, apostrophes, etc.).
-    - Sélectionne aléatoirement parmi les mots valides.
+    Utilise les listes de mots de semanTikSl (dico_mm.txt ou dico_ms.txt) pour
+    éviter les problèmes de l'API Wiktionary (403 Forbidden, mots bruités).
     
     Filtres appliqués:
-    - Mots composés/locutions (espaces, tirets, apostrophes) exclus.
     - Mots absents du modèle word2vec exclus.
     - Mots déjà utilisés exclus.
     - Mots avec une norme L2 trop faible (proxy pour la fréquence) exclus.
-    
-    Respecte les limites de l'API Wiktionary avec backoff exponentiel.
     """
     MIN_NORM = 10.0  # Seuil de norme L2 (plus élevé = mots plus fréquents)
-    BASE_DELAY = 1.0  # Délai de base entre les requêtes (1 seconde)
-    MAX_DELAY = 10.0  # Délai maximum (10 secondes)
     
-    delay = BASE_DELAY
-    consecutive_failures = 0
+    # Charger la liste de mots depuis le fichier local
+    word_list_path = "dico_mm.txt"  # Liste moyenne (~50k mots)
+    if not os.path.exists(word_list_path):
+        word_list_path = "dico_ms.txt"  # Liste courte (~10k mots) si mm n'existe pas
     
-    while True:  # Boucle indéfinie jusqu'à trouver un mot valide
-        lettre = random.choice(ALPHABET)
-        params = {
-            "action": "query",
-            "list": "categorymembers",
-            "cmtitle": CATEGORIE,
-            "cmlimit": 50,  # Récupérer 50 mots par requête
-            "cmstartsortkeyprefix": lettre,
-            "format": "json",
-        }
-        try:
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
-            resp = requests.get(WIKTIONNAIRE_API, params=params, headers=headers, timeout=10)
-            if resp.status_code == 403:
-                # Rate-limited: increase delay exponentially
-                consecutive_failures += 1
-                delay = min(BASE_DELAY * (2 ** consecutive_failures), MAX_DELAY)
-                logger.warning(f"Rate limited (403). Waiting {delay:.1f}s before retry...")
-                await asyncio.sleep(delay)
-                continue
-            resp.raise_for_status()
-            membres = resp.json().get("query", {}).get("categorymembers", [])
-            # Reset delay on success
-            consecutive_failures = 0
-            delay = BASE_DELAY
-        except requests.RequestException as e:
-            logger.warning(f"API request failed: {e}")
-            await asyncio.sleep(delay)
+    try:
+        with open(word_list_path, "r", encoding="utf-8") as f:
+            words = [line.strip().lower() for line in f if line.strip()]
+    except FileNotFoundError:
+        logger.error(f"Fichier de mots introuvable: {word_list_path}")
+        return None
+    
+    # Filtrer les mots valides (dans le modèle, pas déjà utilisés, norme L2 suffisante)
+    valid_words = []
+    for mot in words:
+        # Écarte les mots composés/locutions
+        if " " in mot or "-" in mot or "'" in mot:
             continue
-
-        if not membres:
-            logger.info(f"No members found for prefix '{lettre}'")
-            await asyncio.sleep(delay)
+        # Vérifier que le mot est dans le vocabulaire du modèle
+        if mot not in model:
             continue
-
-        # Filtrer localement les mots valides
-        valid_words = []
-        for member in membres:
-            mot = member["title"].strip().lower()
-            # Écarte les mots composés/locutions
-            if " " in mot or "-" in mot or "'" in mot:
-                continue
-            # Vérifier que le mot est dans le vocabulaire du modèle
-            if mot not in model:
-                continue
-            # Vérifier que le mot n'a pas déjà été utilisé
-            if mot in state.get("mots_utilises", []):
-                continue
-            # Filtre par norme L2
-            norm = np.linalg.norm(model[mot])
-            if norm < MIN_NORM:
-                continue
-            valid_words.append(mot)
-
-        if valid_words:
-            # Sélectionner aléatoirement parmi les mots valides
-            mot = random.choice(valid_words)
-            logger.info(f"Selected word: '{mot}' (L2 norm: {norm:.2f})")
-            return mot
-        else:
-            # Aucun mot valide trouvé, réessayer avec une autre lettre
-            logger.info(f"No valid words found for prefix '{lettre}', retrying...")
-            await asyncio.sleep(delay)
+        # Vérifier que le mot n'a pas déjà été utilisé
+        if mot in state.get("mots_utilises", []):
             continue
+        # Filtre par norme L2
+        norm = np.linalg.norm(model[mot])
+        if norm < MIN_NORM:
+            continue
+        valid_words.append(mot)
+    
+    if not valid_words:
+        logger.error("Aucun mot valide trouvé dans la liste. Vérifiez que dico_mm.txt ou dico_ms.txt existe et contient des mots valides.")
+        return None
+    
+    # Sélectionner aléatoirement parmi les mots valides
+    mot = random.choice(valid_words)
+    logger.info(f"Selected word: '{mot}' (L2 norm: {np.linalg.norm(model[mot]):.2f})")
+    return mot
 
 
 def load_state() -> dict:
@@ -160,7 +122,7 @@ def load_state() -> dict:
         "players": {},
         "guesses_today": {},
         "mots_utilises": [],
-        "neighbors": [],  # 500 plus proches voisins du mot cible
+        "neighbors": [],  # 100 plus proches voisins du mot cible
     }
     if STATE_FILE.exists():
         with open(STATE_FILE, encoding="utf-8") as f:
@@ -181,10 +143,10 @@ state = load_state()
 
 async def nouveau_mot_du_jour():
     """Tire un nouveau mot, l'enregistre comme mot du jour, et réinitialise
-    l'état de la partie. Précalcule également les 500 plus proches voisins."""
+    l'état de la partie. Précalcule également les 100 plus proches voisins."""
     mot = await tirer_mot_wiktionnaire()
     if mot is None:
-        logger.error("Failed to select a word after many attempts")
+        logger.error("Failed to select a word")
         return
 
     today = str(datetime.date.today())
@@ -194,7 +156,7 @@ async def nouveau_mot_du_jour():
     state["attempts_today"] = 0
     state["guesses_today"] = {}
     
-    # Précalculer les 500 plus proches voisins
+    # Précalculer les 100 plus proches voisins
     try:
         neighbors = [word for word, _ in model.most_similar(mot, topn=100)]
         state["neighbors"] = neighbors
@@ -339,7 +301,6 @@ async def on_message(message: discord.Message):
 
     # Calculer la similarité
     sim = model.similarity(guess, target)
-    temp = round(float(sim) * 100, 1)
     
     # Obtenir le rang dans les voisins précalculés (si disponible)
     neighbors = state.get("neighbors", [])
@@ -358,14 +319,14 @@ async def on_message(message: discord.Message):
         # Afficher uniquement la similarité en décimal (pas de barre)
         response = f"{sim:.2f}"
     
-    record_guess(guess, temp)
+    record_guess(guess, compressed_temp)
     save_state()
     await message.reply(content=response, embed=build_proches_embed())
 
 
 @client.tree.command(name="start", description="Affiche l'état de la partie du jour")
 async def start(interaction: discord.Interaction):
-    check_reset()
+    await check_reset()
     if state["found"]:
         msg = f"Le mot du jour a déjà été trouvé en {state['attempts_today']} coups !"
     else:
