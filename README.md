@@ -35,7 +35,7 @@ pip install discord.py gensim requests python-dotenv
    cd cemantix-bot
    ```
 
-2. Télécharge le modèle de vecteurs français depuis [fauconnier.github.io/#data](https://fauconnier.github.io/#data) : prends `frWac_no_postag_no_phrase_200_cbow_cut100.bin` (120 Mo, cbow, 200 dimensions, cutoff 100), place-le à la racine du repo. **Ce fichier n'est pas versionné dans git** (trop lourd), il faut le retélécharger sur chaque nouvelle machine.
+2. Télécharge le modèle de vecteurs français depuis [fauconnier.github.io/#data](https://fauconnier.github.io/#data) : prends `frWac_non_lem_no_postag_no_phrase_200_cbow_cut100.bin` (120 Mo, cbow, 200 dimensions, cutoff 100), place-le à la racine du repo. **Ce fichier n'est pas versionné dans git** (trop lourd), il faut le retélécharger sur chaque nouvelle machine.
 
 3. Copie `.env.example` vers `.env` et remplis les valeurs (ce fichier n'est jamais commité, voir `.gitignore`) :
    - `DISCORD_TOKEN` : le token de ton bot (Developer Portal → Bot → Reset Token)

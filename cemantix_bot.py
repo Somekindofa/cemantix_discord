@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 TOKEN = os.environ["DISCORD_TOKEN"]
 CHANNEL_ID = int(os.environ["CHANNEL_ID"])
-MODEL_PATH = "frWac_no_postag_no_phrase_200_cbow_cut100.bin"
+MODEL_PATH = "frWac_non_lem_no_postag_no_phrase_200_cbow_cut100.bin"
 STATE_FILE = Path("state.json")
 
 WIKTIONNAIRE_API = "https://fr.wiktionary.org/w/api.php"
