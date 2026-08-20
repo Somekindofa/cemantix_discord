@@ -92,7 +92,8 @@ async def tirer_mot_wiktionnaire() -> str | None:
             "format": "json",
         }
         try:
-            resp = requests.get(WIKTIONNAIRE_API, params=params, timeout=10)
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+            resp = requests.get(WIKTIONNAIRE_API, params=params, headers=headers, timeout=10)
             if resp.status_code == 403:
                 # Rate-limited: increase delay exponentially
                 consecutive_failures += 1
