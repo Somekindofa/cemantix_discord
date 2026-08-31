@@ -11,7 +11,7 @@ echo "========================================"
 # Model configuration - 500-dim skip-gram, 298MB (better than 200-dim)
 MODEL_NAME="frWac_non_lem_no_postag_no_phrase_500_skip_cut100.bin"
 MODEL_URL="https://embeddings.net/embeddings/${MODEL_NAME}"
-MODEL_MD5="af38"
+MODEL_MD5="af38908c244dce973e289c70a4ce7242"
 MODEL_PATH="/app/${MODEL_NAME}"
 
 # Dictionary files
@@ -80,7 +80,7 @@ verify_md5() {
 # Check and download model if needed
 if ! file_exists_and_valid "$MODEL_PATH"; then
     echo "Model file not found or empty: $MODEL_NAME"
-    download_file "$MODEL_URL" "$MODEL_PATH" "model (120MB)"
+    download_file "$MODEL_URL" "$MODEL_PATH" "model (298MB)"
     
     # Verify MD5
     if ! verify_md5 "$MODEL_PATH" "$MODEL_MD5"; then
@@ -94,7 +94,7 @@ else
     if ! verify_md5 "$MODEL_PATH" "$MODEL_MD5"; then
         echo "Existing model MD5 mismatch! Redownloading..."
         rm "$MODEL_PATH"
-        download_file "$MODEL_URL" "$MODEL_PATH" "model (120MB)"
+        download_file "$MODEL_URL" "$MODEL_PATH" "model (298MB)"
     fi
 fi
 
