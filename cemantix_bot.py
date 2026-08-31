@@ -1,8 +1,8 @@
 """
 Bot Discord type Cémantix.
 
-Le bot tire automatiquement un mot du jour à minuit parmi une liste pré-filtrée
-de noms communs (dico_mm.txt ou dico_ms.txt), et calcule la similarité
+Le bot tire automatiquement un mot du jour à minuit parmi une liste de
+noms communs filtrés depuis Lexique4.tsv (CDOrtho >= 20), et calcule la similarité
 sémantique entre les propositions des joueurs et le mot cible.
 
 Utilise un modèle word2vec local : frWac_non_lem_no_postag_no_phrase_500_skip_cut100.bin
@@ -47,6 +47,7 @@ CHANNEL_ID = int(os.environ["CHANNEL_ID"])
 # Model configuration - 500-dim skip-gram, better than 200-dim cbow
 MODEL_PATH = "frWac_non_lem_no_postag_no_phrase_500_skip_cut100.bin"
 STATE_FILE = Path("data/state.json")
+WORD_LIST_PATH = "data/noms_communs.txt"
 
 # ---- Load word2vec model ----
 print("Chargement du modèle word2vec (peut prendre 1-2 min)...")
@@ -54,6 +55,16 @@ model = KeyedVectors.load_word2vec_format(MODEL_PATH, binary=True)
 print(f"Modèle chargé: {len(model.key_to_index)} mots, {model.vector_size} dimensions")
 logger.info(f"Gensim model loaded: {MODEL_PATH}")
 logger.info(f"Vocab size: {len(model.key_to_index)}, Dimensions: {model.vector_size}")
+
+# Load common noun set from pre-filtered list
+noms_set = set()
+try:
+    with open(WORD_LIST_PATH, "r", encoding="utf-8") as f:
+        noms_set = {line.strip().lower() for line in f if line.strip()}
+    logger.info(f"Loaded {len(noms_set)} common nouns from {WORD_LIST_PATH}")
+except FileNotFoundError:
+    logger.warning(f"{WORD_LIST_PATH} not found - will use fallback word lists")
+    noms_set = None
 
 # ---- Similarity compression ----
 def compress_similarity(sim: float) -> float:
@@ -104,10 +115,8 @@ MIN_NORM = 2.0
 
 
 async def tirer_mot() -> str | None:
-    """Sélectionne un mot aléatoire depuis une liste pré-filtrée de noms communs."""
-    word_list_path = "dico_mm.txt"
-    if not os.path.exists(word_list_path):
-        word_list_path = "dico_ms.txt"
+    """Sélectionne un mot aléatoire depuis la liste des noms communs filtrés."""
+    word_list_path = WORD_LIST_PATH
     
     try:
         with open(word_list_path, "r", encoding="utf-8") as f:
@@ -120,6 +129,8 @@ async def tirer_mot() -> str | None:
     for mot in words:
         if " " in mot or "-" in mot or "'" in mot:
             continue
+        # Words are pre-filtered, so we can skip the norm check
+        # But still check if in model (in case model changed)
         if mot not in model:
             continue
         if mot in state.get("mots_utilises", []):
@@ -261,8 +272,14 @@ async def on_message(message: discord.Message):
         await message.channel.send(embed=embed)
         return
     
-    # Vérifier si le mot existe dans le vocabulaire
-    if guess not in model:
+    # Vérifier si le mot est un nom commun
+    if noms_set and guess not in noms_set:
+        if guess in model:
+            await message.reply("❌ Seuls les noms communs sont acceptés.")
+        else:
+            await message.reply("❌ Mot inconnu du vocabulaire.")
+        return
+    elif guess not in model:
         await message.reply("❌ Mot inconnu du dictionnaire.")
         return
     

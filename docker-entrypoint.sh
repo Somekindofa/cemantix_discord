@@ -14,7 +14,8 @@ MODEL_URL="https://embeddings.net/embeddings/${MODEL_NAME}"
 MODEL_MD5="af38908c244dce973e289c70a4ce7242"
 MODEL_PATH="/app/${MODEL_NAME}"
 
-# Dictionary files
+# Dictionary files (legacy - kept for backward compatibility)
+# Now using noms_communs.txt from Lexique4.tsv
 DICT_MM_URL="https://raw.githubusercontent.com/TikSL/semanTikSl/main/dico_mm.txt"
 DICT_MS_URL="https://raw.githubusercontent.com/TikSL/semanTikSl/main/dico_ms.txt"
 DICT_MM_PATH="/app/dico_mm.txt"
@@ -98,23 +99,43 @@ else
     fi
 fi
 
-# Check and download dictionary files
-if ! file_exists_and_valid "$DICT_MM_PATH"; then
-    download_file "$DICT_MM_URL" "$DICT_MM_PATH" "dico_mm.txt"
-else
-    echo "dico_mm.txt already exists"
-fi
-
-if ! file_exists_and_valid "$DICT_MS_PATH"; then
-    download_file "$DICT_MS_URL" "$DICT_MS_PATH" "dico_ms.txt"
-else
-    echo "dico_ms.txt already exists"
-fi
+# Check and download dictionary files (legacy - optional)
+# Commented out since we now use noms_communs.txt from Lexique4.tsv
+# if ! file_exists_and_valid "$DICT_MM_PATH"; then
+#     download_file "$DICT_MM_URL" "$DICT_MM_PATH" "dico_mm.txt"
+# else
+#     echo "dico_mm.txt already exists"
+# fi
+#
+# if ! file_exists_and_valid "$DICT_MS_PATH"; then
+#     download_file "$DICT_MS_URL" "$DICT_MS_PATH" "dico_ms.txt"
+# else
+#     echo "dico_ms.txt already exists"
+# fi
 
 # Create data directory if it doesn't exist
 mkdir -p /app/data/vocab
+
 # Ensure state.json exists so bot doesn't crash on first run
 [[ -f /app/data/state.json ]] || echo '{}' > /app/data/state.json
+
+# Create noms_communs.txt from Lexique4.tsv (pure NOM, CDOrtho >= 20)
+NOUNS_FILE="/app/data/noms_communs.txt"
+LEXIQUE_FILE="/app/data/vocab/Lexique4.tsv"
+
+if ! file_exists_and_valid "$NOUNS_FILE"; then
+    if file_exists_and_valid "$LEXIQUE_FILE"; then
+        echo "Creating noms_communs.txt from Lexique4.tsv..."
+        # Column 1 = word, Column 6 = CgramOrtho, Column 13 = CDOrtho
+        awk -F'\t' '$6 == "NOM" && $13 >= 20 {print tolower($1)}' "$LEXIQUE_FILE" > "$NOUNS_FILE"
+        count=$(wc -l < "$NOUNS_FILE")
+        echo "Filtered $count common nouns (CDOrtho >= 20, CgramOrtho == NOM)"
+    else
+        echo "WARNING: $LEXIQUE_FILE not found, cannot create noun list"
+        # Fallback: create empty file so bot doesn't crash
+        echo "" > "$NOUNS_FILE"
+    fi
+fi
 
 # Check for .env file
 echo ""
