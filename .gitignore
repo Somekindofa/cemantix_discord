@@ -10,5 +10,10 @@ state.json
 # Service systemd (chemins absolus propres à chaque machine)
 cemantix.service
 
+# Dictionnaire (à télécharger depuis semanTikSl)
+dico_*.txt
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class

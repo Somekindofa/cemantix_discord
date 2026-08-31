@@ -1,172 +1,182 @@
 # Cémantix Discord Bot
 
-Bot Discord qui recrée le principe de [Cémantix](https://cemantix.certitudes.org/) (jeu à la Semantle : deviner un mot grâce à un score de proximité sémantique "hot/cold") pour jouer entre amis sur un serveur Discord.
+Bot Discord qui recrée le principe de [Cémantix](https://cemantix.certitudes.org/) — un jeu où il faut deviner un mot grâce à un score de proximité sémantique (style "hot/cold").
 
-## Fonctionnement
+## Comment ça marche
 
-Le bot propose **deux modes de jeu** :
+- Chaque nuit à minuit, le bot tire automatiquement un nouveau nom commun français
+- Les joueurs tapent un mot dans le salon Discord configuré
+- Le bot répond avec un score de similarité sémantique et une barre de progression
+- Un top 10 des mots les plus proches proposés s'affiche à chaque tentative
+- Stats persistées par joueur (victoires, nombre moyen de coups)
 
-### Mode Local (par défaut)
-- Chaque nuit à minuit, le bot tire automatiquement un nouveau nom commun français depuis une liste pré-filtrée (dico_mm.txt ou dico_ms.txt), en excluant les mots déjà utilisés.
-- Les joueurs tapent un mot dans le salon configuré. Le bot calcule la similarité cosinus entre ce mot et le mot du jour via un modèle d'embeddings [word2vec français (frWac2Vec)](https://fauconnier.github.io/#data), et répond avec un score en % et une barre de progression.
-- Un top 10 des mots les plus proches proposés dans la journée s'affiche à chaque tentative.
-- Stats persistées par joueur (victoires, nombre moyen de coups).
-
-### Mode API (Infomaniak)
-- Utilise l'API Infomaniak pour obtenir des embeddings de mots en temps réel ou pré-calculés.
-- Nécessite un vocabulaire local (fournis dans `data/vocab/`) et des identifiants API Infomaniak.
-- Permet d'avoir un vocabulaire propre et contrôlé, sans les problèmes de bruit du modèle word2vec local.
-- Le mode API doit être activé avec `/set_mode api` et les embeddings doivent être pré-calculés avec `/ingest_vocab`.
-
-## Commandes
-
-### Commandes communes
-| Commande | Description |
-|---|---|
-| `/start` | État de la partie du jour (mode local) |
-| `/start_api` | État de la partie du jour (mode API) |
-| `/top` | Classement global des joueurs |
-| `/top_local` | Classement des joueurs (mode local) |
-| `/top_api` | Classement des joueurs (mode API) |
-| `/profil` | Stats personnelles (tous modes) |
-| `/profil_local` | Stats personnelles (mode local) |
-| `/profil_api` | Stats personnelles (mode API) |
-
-### Commandes de configuration
-| Commande | Description |
-|---|---|
-| `/set_mode` | Change le mode de jeu (local/api) |
-| `/mode_status` | Affiche le mode actuel et la disponibilité |
-| `/ingest_vocab` | **[Admin]** Lance l'ingestion du vocabulaire API |
-
-### Commandes de jeu
-- Tapez simplement un mot dans le salon pour jouer dans le mode actuel.
-
-## Préréquis
+## Prérequis
 
 - Python 3.11+
-- Un Raspberry Pi (ou toute machine Linux) allumé en continu
+- Une machine (PC, Raspberry Pi, serveur) allumée en continu
 - Une application Discord Bot ([Developer Portal](https://discord.com/developers/applications)) avec l'intent **Message Content** activé
 
-```bash
-# Pour le mode local
-pip install discord.py gensim numpy python-dotenv aiohttp
+---
 
-# Pour le mode API (aiohttp est nécessaire pour les appels API)
-pip install discord.py numpy python-dotenv aiohttp
-```
+## Installation avec Docker (Recommandé)
 
-## Installation
+La méthode la plus simple — **tout est automatique** !
 
-1. Clone ce repo sur ta machine :
+### Étapes
+
+1. **Clone le repo** :
    ```bash
    git clone <url_du_repo> cemantix-bot
    cd cemantix-bot
    ```
 
-2. **Pour le mode local** : Télécharge le modèle de vecteurs français depuis [fauconnier.github.io/#data](https://fauconnier.github.io/#data) : prends `frWac_non_lem_no_postag_no_phrase_200_cbow_cut100.bin` (120 Mo, cbow, 200 dimensions, cutoff 100), place-le à la racine du repo. **Ce fichier n'est pas versionné dans git** (trop lourd), il faut le retélécharger sur chaque nouvelle machine.
-
-3. **Pour le mode API** : Prépare ton vocabulaire dans `data/vocab/vocab.txt` (voir [Sourcing du Vocabulaire](#sourcing-du-vocabulaire) ci-dessous).
-
-4. Copie `.env.example` vers `.env` et remplis les valeurs (ce fichier n'est jamais commité, voir `.gitignore`) :
-   - `DISCORD_TOKEN` : le token de ton bot (Developer Portal → Bot → Reset Token)
-   - `CHANNEL_ID` : l'ID du salon Discord où vous jouez (mode développeur activé → clic droit sur le salon → copier l'identifiant)
-   - **Pour le mode API** :
-     - `INFOMANIAK_PRODUCT_ID` : L'ID de ton produit Infomaniak AI
-     - `INFOMANIAK_API_KEY` : Ta clé API Infomaniak
-
-5. Invite le bot sur ton serveur via OAuth2 URL Generator (scopes `bot` + `applications.commands`, permissions `Send Messages`, `Read Message History`, `View Channel`).
-
-6. Lance le bot :
+2. **Configure le bot** :
    ```bash
-   # Mode local (par défaut)
-   python cemantix_bot.py
+   cp .env.example .env
+   # Édite .env avec ton éditeur préféré
+   ```
    
-   # Mode API avec ingestion du vocabulaire
-   python cemantix_bot.py --mode api --ingest-vocab
-   
-   # Mode API sans ingestion (utilise les embeddings existants)
-   python cemantix_bot.py --mode api
+   Dans `.env`, mets :
+   ```ini
+   DISCORD_TOKEN=ton_token_de_bot_discord
+   CHANNEL_ID=l_id_du_salon_ou_tu_veux_jouer
    ```
 
-   **Note** : La première exécution avec `--ingest-vocab` peut prendre plusieurs minutes selon la taille de ton vocabulaire et les limites de l'API Infomaniak.
+3. **Lance le bot** :
+   ```bash
+   docker-compose up -d
+   ```
+   
+   > ✨ **Magie** : Au premier lancement, le conteneur télécharge automatiquement :
+   > - Le modèle word2vec **frWac 500-dim skip-gram** (298 Mo)
+   > - Les dictionnaires français (dico_mm.txt, dico_ms.txt)
+   > - Toutes les dépendances Python
 
-## Sourcing du Vocabulaire
+4. **Vérifie que ça marche** :
+   ```bash
+   docker-compose logs -f cemantix
+   ```
+   Attends de voir `Connecté en tant que [nom_du_bot]` avant de tester sur Discord.
 
-Pour le mode API, tu as besoin d'un fichier de vocabulaire français propre. Voici les options recommandées :
+### Commandes Docker utiles
 
-### Option 1: Lexique 3.83 (Recommandé)
-- **Source**: https://www.lexique.org/
-- **Fichier**: `Lexique383.tsv`
-- **Format**: Tab-separated avec métadonnées
-- **Extraction**:
-  ```bash
-  # Extraire uniquement les mots (colonne 1) et filtrer
-  cut -f1 Lexique383.tsv | grep -E '^[a-z]+$' | grep -v -E '[ -]' > data/vocab/vocab.txt
-  ```
+| Commande | Description |
+|---|---|
+| `docker-compose up -d` | Lance le bot en arrière-plan |
+| `docker-compose down` | Arrête le bot |
+| `docker-compose restart` | Redémarre le bot |
+| `docker-compose logs -f` | Affiche les logs en temps réel |
+| `docker-compose pull && docker-compose up -d --build` | Met à jour après un `git pull` |
 
-### Option 2: Utiliser les fichiers existants
-Copie simplement tes fichiers existants :
-```bash
-cp dico_mm.txt data/vocab/vocab.txt
-# ou
-cp dico_ms.txt data/vocab/vocab.txt
-```
+---
 
-### Option 3: Wiktionnaire
-Utilise l'API MediaWiki pour extraire des noms communs français.
+## Installation manuelle (sans Docker)
 
-### Format attendu
-- Un mot par ligne
-- Encodage UTF-8
-- Mots en minuscules
-- Pas d'espaces, tirets ou apostrophes (mots composés exclus)
-- Caractères alphabétiques uniquement
+Si tu préfères ne pas utiliser Docker :
 
-Voir `data/vocab/README.md` pour plus de détails.
+1. **Clone le repo** :
+   ```bash
+   git clone <url_du_repo> cemantix-bot
+   cd cemantix-bot
+   ```
 
-## Structure des données
+2. **Installe les dépendances** :
+   ```bash
+   pip install discord.py gensim numpy python-dotenv
+   ```
 
-### Fichiers d'état
-- `state.json` : État du jeu pour le **mode local** (non versionné)
-- `state_api.json` : État du jeu pour le **mode API** (non versionné)
+3. **Télécharge le modèle** (298 Mo) :
+   ```bash
+   # Modèle 500-dim skip-gram avec cutoff 100
+   wget https://embeddings.net/embeddings/frWac_non_lem_no_postag_no_phrase_500_skip_cut100.bin
+   ```
+   
+   *Alternative* : Tu peux aussi utiliser un autre modèle de [fauconnier.github.io](https://fauconnier.github.io/#data). Dans ce cas, modifie `MODEL_PATH` dans `cemantix_bot.py`.
 
-Les deux fichiers contiennent :
-- `target` : Mot du jour
-- `current_date` : Date du mot actuel
-- `found` : Si le mot a été trouvé
-- `attempts_today` : Nombre de tentatives
-- `players` : Stats des joueurs
-- `guesses_today` : Scores des propositions du jour
-- `mots_utilises` : Historique des mots utilisés
-- `neighbors` : Liste des 100 mots les plus proches du mot du jour
+4. **Télécharge les dictionnaires** :
+   ```bash
+   wget https://raw.githubusercontent.com/TikSL/semanTikSl/main/dico_mm.txt
+   wget https://raw.githubusercontent.com/TikSL/semanTikSl/main/dico_ms.txt
+   ```
 
-### Fichiers du vocabulaire API
-- `data/vocab/vocab.txt` : Liste des mots du vocabulaire (un mot par ligne)
-- `data/vocab/embeddings.npy` : Embeddings pré-calculés (format NumPy float16)
-- `data/vocab/vocab.json` : Métadonnées du vocabulaire
-- `data/vocab/word_to_index.json` : Mappage mot → index
+5. **Configure le bot** :
+   ```bash
+   cp .env.example .env
+   # Édite .env avec DISCORD_TOKEN et CHANNEL_ID
+   ```
 
-Voir `CLAUDE.md` pour le schéma détaillé du state.
+6. **Invite le bot sur ton serveur** via OAuth2 URL Generator (scopes : `bot` + `applications.commands`, permissions : `Send Messages`, `Read Message History`, `View Channel`).
 
-## Déploiement en continu (systemd)
+7. **Lance le bot** :
+   ```bash
+   python cemantix_bot.py
+   ```
 
-Pour que le bot tourne 24/7 et redémarre automatiquement après un reboot du Pi, voir le service systemd `cemantix.service` (non versionné, propre à chaque machine, voir `CLAUDE.md` pour le contenu).
+---
 
-```bash
-sudo systemctl status cemantix.service   # vérifier l'état
-sudo systemctl restart cemantix.service  # relancer après une modif
-journalctl -u cemantix.service -n 50 --no-pager   # voir les derniers logs
-```
+## Commandes Discord
 
-## Mettre à jour le bot sur le Raspberry Pi
+| Commande | Description |
+|---|---|
+| `/start` | Affiche l'état de la partie du jour |
+| `/top` | Classement des meilleurs joueurs |
+| `/profil` | Tes stats personnelles |
+| `/stats` | Stats globales du bot (modèle, mots utilisés, etc.) |
 
+**Pour jouer** : Tape simplement un mot dans le salon configuré !
+
+---
+
+## Modèle utilisé
+
+Par défaut, le bot utilise **frWac_non_lem_no_postag_no_phrase_500_skip_cut100.bin** :
+- **Source** : [frWac2Vec](https://fauconnier.github.io/#data) (corpus frWac, 1.6 milliard de mots)
+- **Architecture** : Skip-gram (meilleure que CBOW pour la similarité)
+- **Dimensions** : 500 (vs 200 précédemment) → meilleure précision sémantique
+- **Taille** : 298 Mo (vs 120 Mo) → vocabulaire plus riche
+- **Cutoff** : 100 (filtre les mots trop rares)
+- **MD5** : af38
+
+### Changer de modèle
+
+Tu peux utiliser un autre modèle depuis [embeddings.net](https://embeddings.net/embeddings/) :
+
+1. Modifie `MODEL_PATH` dans `cemantix_bot.py`
+2. Modifie `docker-entrypoint.sh` si tu utilises Docker :
+   ```bash
+   MODEL_NAME="ton_modele.bin"
+   MODEL_URL="https://embeddings.net/embeddings/${MODEL_NAME}"
+   MODEL_MD5="son_md5"
+   ```
+3. Rebuild le conteneur : `docker-compose down && docker-compose up -d --build`
+
+---
+
+## Déploiement 24/7
+
+### Avec Docker (recommandé)
+Le conteneur se relance automatiquement grâce à `restart: unless-stopped`.
+
+### Avec systemd (manual)
+Crée un service systemd (voir `CLAUDE.md` pour un exemple).
+
+---
+
+## Mise à jour
+
+### Avec Docker
 ```bash
 cd ~/cemantix-bot
 git pull
-sudo systemctl restart cemantix.service
+docker-compose down
+docker-compose up -d --build
 ```
 
-## Accès distant
-
-Le Pi est accessible en SSH via [Tailscale](https://tailscale.com/) depuis n'importe quel réseau (pas seulement le Wi-Fi local), utile pour se connecter avec VS Code Remote-SSH depuis un autre ordinateur.
+### Sans Docker
+```bash
+cd ~/cemantix-bot
+git pull
+# Si le modèle ou les dépendances ont changé
+pip install -r requirements.txt
+# Redémarre le bot (Ctrl+C puis relance)
+```
