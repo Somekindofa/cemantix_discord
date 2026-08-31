@@ -1,16 +1,9 @@
-version: '3.8'
-
 services:
   cemantix:
     build: .
     container_name: cemantix-bot
     restart: unless-stopped
     volumes:
-      # Persist state files and downloaded models
-      - ./state.json:/app/state.json
-      - ./frWac_non_lem_no_postag_no_phrase_500_skip_cut100.bin:/app/frWac_non_lem_no_postag_no_phrase_500_skip_cut100.bin
-      - ./dico_mm.txt:/app/dico_mm.txt
-      - ./dico_ms.txt:/app/dico_ms.txt
       - ./.env:/app/.env:ro
     environment:
       - TZ=Europe/Paris

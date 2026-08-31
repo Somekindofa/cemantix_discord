@@ -99,7 +99,8 @@ state = load_state()
 
 
 # ---- Game logic ----
-MIN_NORM = 10.0
+# For 500-dim skip-gram model, norms are typically 2-6 (vs 10-20 for 200-dim cbow)
+MIN_NORM = 2.0
 
 
 async def tirer_mot() -> str | None:
