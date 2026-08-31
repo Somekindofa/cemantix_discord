@@ -5,6 +5,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./.env:/app/.env:ro
+      - ./data:/app/data
     environment:
       - TZ=Europe/Paris
     command: ["python", "cemantix_bot.py"]

@@ -46,7 +46,7 @@ CHANNEL_ID = int(os.environ["CHANNEL_ID"])
 
 # Model configuration - 500-dim skip-gram, better than 200-dim cbow
 MODEL_PATH = "frWac_non_lem_no_postag_no_phrase_500_skip_cut100.bin"
-STATE_FILE = Path("state.json")
+STATE_FILE = Path("data/state.json")
 
 # ---- Load word2vec model ----
 print("Chargement du modèle word2vec (peut prendre 1-2 min)...")

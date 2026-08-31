@@ -113,6 +113,8 @@ fi
 
 # Create data directory if it doesn't exist
 mkdir -p /app/data/vocab
+# Ensure state.json exists so bot doesn't crash on first run
+[[ -f /app/data/state.json ]] || echo '{}' > /app/data/state.json
 
 # Check for .env file
 echo ""
