@@ -113,6 +113,25 @@ state = load_state()
 # For 500-dim skip-gram model, norms are typically 2-6 (vs 10-20 for 200-dim cbow)
 MIN_NORM = 2.0
 
+# Compute and log the size of the available vocabulary: common nouns that are
+# present in the model with a sufficient L2 norm (i.e. valid target candidates).
+if noms_set:
+    _valid_count = 0
+    for _mot in noms_set:
+        if " " in _mot or "-" in _mot or "'" in _mot:
+            continue
+        if _mot not in model:
+            continue
+        if np.linalg.norm(model[_mot]) < MIN_NORM:
+            continue
+        _valid_count += 1
+    logger.info(
+        f"Available vocabulary: {_valid_count} valid candidate words "
+        f"(in model, norm >= {MIN_NORM}, out of {len(noms_set)} nouns)"
+    )
+else:
+    logger.warning("No noun list loaded — available vocabulary unknown")
+
 
 async def tirer_mot() -> str | None:
     """Sélectionne un mot aléatoire depuis la liste des noms communs filtrés."""
@@ -263,9 +282,10 @@ async def on_message(message: discord.Message):
         save_state(state)
         
         record_result(str(message.author.id), state["attempts_today"], gagne=True)
-        
+
         await message.reply(
-            f"🎉 Trouvé en {state['attempts_today']} coups ! "
+            f"🎉 Félicitations {message.author.mention} ! "
+            f"Tu as trouvé le mot du jour en {state['attempts_today']} coups ! "
             f"Le mot était **{target}**"
         )
         embed = build_proches_embed()
