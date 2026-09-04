@@ -126,10 +126,10 @@ LEXIQUE_FILE="/app/data/vocab/Lexique4.tsv"
 if ! file_exists_and_valid "$NOUNS_FILE"; then
     if file_exists_and_valid "$LEXIQUE_FILE"; then
         echo "Creating noms_communs.txt from Lexique4.tsv..."
-        # Column 1 = word, Column 6 = CgramOrtho, Column 13 = CDOrtho
-        awk -F'\t' '$6 == "NOM" && $13 >= 20 {print tolower($1)}' "$LEXIQUE_FILE" > "$NOUNS_FILE"
+        # Column 1 = word, Column 6 = CgramOrtho, Column 8 = Nombre, Column 11 = FreqOrtho
+        awk -F'\t' '$6 == "NOM" && $11 >= 1 && ($8 == "s" || $8 == "i") && length($1) >= 4 && length($1) <= 12 && $1 !~ /[ -]/ {print tolower($1)}' "$LEXIQUE_FILE" > "$NOUNS_FILE"
         count=$(wc -l < "$NOUNS_FILE")
-        echo "Filtered $count common nouns (CDOrtho >= 20, CgramOrtho == NOM)"
+        echo "Filtered $count common nouns (FreqOrtho >= 1, Singular+Invariable, 4-12 chars, CgramOrtho == NOM)"
     else
         echo "WARNING: $LEXIQUE_FILE not found, cannot create noun list"
         # Fallback: create empty file so bot doesn't crash
